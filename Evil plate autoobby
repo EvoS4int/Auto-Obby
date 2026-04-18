@@ -1,273 +1,244 @@
+-- TELEPORT GUI v4 - Compatible with all executors
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
--- ─── CONFIG ───────────────────────────────────────────────────────────────────
-local COOLDOWN     = 125
-local WALK_TARGET  = Vector3.new(117, 15, 150)
-local TP_TARGET    = CFrame.new(179, 28, 249)
-local VOID_Y       = -500   -- Y position considered "void" for the death-reset
--- ──────────────────────────────────────────────────────────────────────────────
+local COOLDOWN    = 125
+local WALK_TARGET = Vector3.new(117, 15, 150)
+local TP_TARGET   = CFrame.new(179, 28, 249)
+local VOID_Y      = -500
 
-local enabled    = false
-local timeLeft   = COOLDOWN
-local ready      = false
-local isRunning  = false
+local enabled   = false
+local timeLeft  = COOLDOWN
+local ready     = false
+local isRunning = false
 
--- ─── ROOT GUI ─────────────────────────────────────────────────────────────────
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TpGui"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = player:WaitForChild("PlayerGui")
+-- Destroy any old GUI first
+pcall(function()
+    local old = player.PlayerGui:FindFirstChild("TpGui4")
+    if old then old:Destroy() end
+end)
 
--- Outer shell — wider to fit new layout
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 230, 0, 110)
-frame.Position = UDim2.new(0, 16, 0, 16)
-frame.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
-frame.BorderSizePixel = 0
-frame.ClipsDescendants = true
-frame.Parent = screenGui
+task.wait(0.1)
 
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 14)
+local gui = Instance.new("ScreenGui")
+gui.Name = "TpGui4"
+gui.ResetOnSpawn = false
+gui.Parent = player.PlayerGui
 
--- Outer border (1 px, very subtle)
-local outerStroke = Instance.new("UIStroke", frame)
-outerStroke.Color = Color3.fromRGB(38, 38, 44)
-outerStroke.Thickness = 1
-outerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+-- Main window
+local win = Instance.new("Frame")
+win.Size = UDim2.new(0, 210, 0, 105)
+win.Position = UDim2.new(0, 20, 0, 20)
+win.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
+win.BorderSizePixel = 0
+win.Active = true
+win.Draggable = true  -- Use Roblox built-in drag
+win.Parent = gui
+Instance.new("UICorner", win).CornerRadius = UDim.new(0, 10)
+local ws = Instance.new("UIStroke", win)
+ws.Color = Color3.fromRGB(42, 42, 52)
+ws.Thickness = 1
 
--- Subtle top-edge highlight line
-local topLine = Instance.new("Frame", frame)
-topLine.Size = UDim2.new(0.6, 0, 0, 1)
-topLine.Position = UDim2.new(0.2, 0, 0, 0)
-topLine.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-topLine.BorderSizePixel = 0
-topLine.BackgroundTransparency = 0.5
-Instance.new("UICorner", topLine).CornerRadius = UDim.new(1, 0)
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+titleBar.BorderSizePixel = 0
+titleBar.ZIndex = 2
+titleBar.Parent = win
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
--- Ambient glow (ImageLabel trick via gradient overlay)
-local glowOverlay = Instance.new("Frame", frame)
-glowOverlay.Size = UDim2.new(1, 0, 0.5, 0)
-glowOverlay.Position = UDim2.new(0, 0, 0, 0)
-glowOverlay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-glowOverlay.BackgroundTransparency = 0.97
-glowOverlay.BorderSizePixel = 0
-glowOverlay.ZIndex = 0
+-- Fix bottom corners of titlebar (overlap trick)
+local titleBarFix = Instance.new("Frame")
+titleBarFix.Size = UDim2.new(1, 0, 0, 10)
+titleBarFix.Position = UDim2.new(0, 0, 1, -10)
+titleBarFix.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+titleBarFix.BorderSizePixel = 0
+titleBarFix.ZIndex = 2
+titleBarFix.Parent = titleBar
 
--- ─── HEADER ROW ───────────────────────────────────────────────────────────────
 -- Status dot
-local dot = Instance.new("Frame", frame)
-dot.Size = UDim2.new(0, 6, 0, 6)
-dot.Position = UDim2.new(0, 14, 0, 15)
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 7, 0, 7)
+dot.Position = UDim2.new(0, 10, 0.5, -3)
 dot.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
 dot.BorderSizePixel = 0
-dot.ZIndex = 5
+dot.ZIndex = 3
+dot.Parent = titleBar
 Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
--- Title
-local titleLabel = Instance.new("TextLabel", frame)
-titleLabel.Size = UDim2.new(0, 120, 0, 14)
-titleLabel.Position = UDim2.new(0, 26, 0, 11)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "TELEPORT"
-titleLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
-titleLabel.TextSize = 10
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.LetterSpacing = 3
-titleLabel.ZIndex = 5
+-- Title text
+local titleTxt = Instance.new("TextLabel")
+titleTxt.Size = UDim2.new(1, -60, 1, 0)
+titleTxt.Position = UDim2.new(0, 24, 0, 0)
+titleTxt.BackgroundTransparency = 1
+titleTxt.Text = "TELEPORT"
+titleTxt.TextColor3 = Color3.fromRGB(185, 185, 200)
+titleTxt.TextSize = 10
+titleTxt.Font = Enum.Font.GothamBold
+titleTxt.TextXAlignment = Enum.TextXAlignment.Left
+titleTxt.ZIndex = 3
+titleTxt.Parent = titleBar
 
--- Version badge
-local badge = Instance.new("TextLabel", frame)
-badge.Size = UDim2.new(0, 36, 0, 13)
-badge.Position = UDim2.new(1, -50, 0, 11)
-badge.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
-badge.BorderSizePixel = 0
-badge.Text = "AUTO"
-badge.TextColor3 = Color3.fromRGB(80, 80, 95)
-badge.TextSize = 8
-badge.Font = Enum.Font.GothamBold
-badge.ZIndex = 5
-Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 4)
-local badgeStroke = Instance.new("UIStroke", badge)
-badgeStroke.Color = Color3.fromRGB(35, 35, 42)
-badgeStroke.Thickness = 1
+-- Drag label hint
+local dragHint = Instance.new("TextLabel")
+dragHint.Size = UDim2.new(0, 40, 1, 0)
+dragHint.Position = UDim2.new(1, -44, 0, 0)
+dragHint.BackgroundTransparency = 1
+dragHint.Text = "⠿"
+dragHint.TextColor3 = Color3.fromRGB(55, 55, 65)
+dragHint.TextSize = 12
+dragHint.Font = Enum.Font.GothamBold
+dragHint.ZIndex = 3
+dragHint.Parent = titleBar
 
--- Thin divider
-local divider = Instance.new("Frame", frame)
-divider.Size = UDim2.new(1, -28, 0, 1)
-divider.Position = UDim2.new(0, 14, 0, 32)
-divider.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-divider.BorderSizePixel = 0
+-- Divider
+local div = Instance.new("Frame")
+div.Size = UDim2.new(1, -20, 0, 1)
+div.Position = UDim2.new(0, 10, 0, 30)
+div.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
+div.BorderSizePixel = 0
+div.Parent = win
 
--- ─── PROGRESS RING (SVG-style using nested frames) ────────────────────────────
-local RING_SIZE = 50
+-- ─── RING ─────────────────────────────────────────────────────────────────────
+local RS = 46
+local ringBg = Instance.new("Frame")
+ringBg.Size = UDim2.new(0, RS, 0, RS)
+ringBg.Position = UDim2.new(0, 10, 0, 38)
+ringBg.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+ringBg.BorderSizePixel = 0
+ringBg.ZIndex = 2
+ringBg.Parent = win
+Instance.new("UICorner", ringBg).CornerRadius = UDim.new(1, 0)
 
-local ringContainer = Instance.new("Frame", frame)
-ringContainer.Size = UDim2.new(0, RING_SIZE, 0, RING_SIZE)
-ringContainer.Position = UDim2.new(0, 12, 0, 40)
-ringContainer.BackgroundTransparency = 1
-ringContainer.ZIndex = 4
-
--- Track (dark circle)
-local ringTrack = Instance.new("Frame", ringContainer)
-ringTrack.Size = UDim2.new(1, 0, 1, 0)
-ringTrack.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
-ringTrack.BorderSizePixel = 0
-ringTrack.ZIndex = 4
-Instance.new("UICorner", ringTrack).CornerRadius = UDim.new(1, 0)
-
--- Fill ring (gradient trick)
-local ringFill = Instance.new("Frame", ringContainer)
+local ringFill = Instance.new("Frame")
 ringFill.Size = UDim2.new(1, 0, 1, 0)
-ringFill.BackgroundColor3 = Color3.fromRGB(60, 140, 255)
+ringFill.BackgroundColor3 = Color3.fromRGB(55, 125, 255)
 ringFill.BorderSizePixel = 0
-ringFill.ZIndex = 5
+ringFill.ZIndex = 3
+ringFill.Parent = ringBg
 Instance.new("UICorner", ringFill).CornerRadius = UDim.new(1, 0)
 
-local ringGrad = Instance.new("UIGradient", ringFill)
-ringGrad.Rotation = 0
+local ringGrad = Instance.new("UIGradient")
 ringGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0,     Color3.fromRGB(60, 140, 255)),
-    ColorSequenceKeypoint.new(0.001, Color3.fromRGB(60, 140, 255)),
-    ColorSequenceKeypoint.new(0.002, Color3.fromRGB(22, 22, 26)),
-    ColorSequenceKeypoint.new(1,     Color3.fromRGB(22, 22, 26)),
+    ColorSequenceKeypoint.new(0,     Color3.fromRGB(55, 125, 255)),
+    ColorSequenceKeypoint.new(0.001, Color3.fromRGB(55, 125, 255)),
+    ColorSequenceKeypoint.new(0.002, Color3.fromRGB(20, 20, 26)),
+    ColorSequenceKeypoint.new(1,     Color3.fromRGB(20, 20, 26)),
 })
+ringGrad.Parent = ringFill
 
--- Inner cutout
-local ringInner = Instance.new("Frame", ringContainer)
-ringInner.Size = UDim2.new(0, RING_SIZE - 12, 0, RING_SIZE - 12)
-ringInner.Position = UDim2.new(0.5, -(RING_SIZE - 12)/2, 0.5, -(RING_SIZE - 12)/2)
-ringInner.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+local ringInner = Instance.new("Frame")
+ringInner.Size = UDim2.new(0, RS-12, 0, RS-12)
+ringInner.Position = UDim2.new(0.5, -(RS-12)/2, 0.5, -(RS-12)/2)
+ringInner.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
 ringInner.BorderSizePixel = 0
-ringInner.ZIndex = 6
+ringInner.ZIndex = 4
+ringInner.Parent = ringBg
 Instance.new("UICorner", ringInner).CornerRadius = UDim.new(1, 0)
 
--- Timer text inside ring
-local timerLabel = Instance.new("TextLabel", ringInner)
-timerLabel.Size = UDim2.new(1, 0, 1, 0)
-timerLabel.BackgroundTransparency = 1
-timerLabel.Text = "--"
-timerLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
-timerLabel.TextSize = 11
-timerLabel.Font = Enum.Font.GothamBold
-timerLabel.ZIndex = 7
+local timerTxt = Instance.new("TextLabel")
+timerTxt.Size = UDim2.new(1, 0, 1, 0)
+timerTxt.BackgroundTransparency = 1
+timerTxt.Text = "--"
+timerTxt.TextColor3 = Color3.fromRGB(150, 150, 165)
+timerTxt.TextSize = 11
+timerTxt.Font = Enum.Font.GothamBold
+timerTxt.ZIndex = 5
+timerTxt.Parent = ringInner
 
--- ─── RIGHT PANEL ──────────────────────────────────────────────────────────────
--- Auto toggle button
-local autoBtn = Instance.new("TextButton", frame)
-autoBtn.Size = UDim2.new(1, -80, 0, 26)
-autoBtn.Position = UDim2.new(0, 70, 0, 40)
-autoBtn.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+-- ─── AUTO BUTTON ─────────────────────────────────────────────────────────────
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(1, -70, 0, 28)
+autoBtn.Position = UDim2.new(0, 64, 0, 36)
+autoBtn.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 autoBtn.BorderSizePixel = 0
-autoBtn.TextScaled = false
+autoBtn.Text = "AUTO  OFF"
+autoBtn.TextColor3 = Color3.fromRGB(72, 72, 88)
 autoBtn.TextSize = 10
 autoBtn.Font = Enum.Font.GothamBold
-autoBtn.TextColor3 = Color3.fromRGB(80, 80, 95)
-autoBtn.Text = "AUTO  OFF"
 autoBtn.AutoButtonColor = false
 autoBtn.ZIndex = 5
+autoBtn.Parent = win
 Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0, 7)
 local autoBtnStroke = Instance.new("UIStroke", autoBtn)
-autoBtnStroke.Color = Color3.fromRGB(30, 30, 36)
+autoBtnStroke.Color = Color3.fromRGB(32, 32, 42)
 autoBtnStroke.Thickness = 1
 
--- Manual / START NOW button
-local manualBtn = Instance.new("TextButton", frame)
-manualBtn.Size = UDim2.new(1, -80, 0, 26)
-manualBtn.Position = UDim2.new(0, 70, 0, 72)
-manualBtn.BackgroundColor3 = Color3.fromRGB(14, 28, 18)
-manualBtn.BorderSizePixel = 0
-manualBtn.TextScaled = false
-manualBtn.TextSize = 10
-manualBtn.Font = Enum.Font.GothamBold
-manualBtn.TextColor3 = Color3.fromRGB(60, 200, 110)
-manualBtn.Text = "▶  START NOW"
-manualBtn.AutoButtonColor = false
-manualBtn.ZIndex = 5
-Instance.new("UICorner", manualBtn).CornerRadius = UDim.new(0, 7)
-local manBtnStroke = Instance.new("UIStroke", manualBtn)
-manBtnStroke.Color = Color3.fromRGB(30, 70, 42)
+-- ─── MANUAL BUTTON ───────────────────────────────────────────────────────────
+local manBtn = Instance.new("TextButton")
+manBtn.Size = UDim2.new(1, -70, 0, 28)
+manBtn.Position = UDim2.new(0, 64, 0, 68)
+manBtn.BackgroundColor3 = Color3.fromRGB(12, 26, 16)
+manBtn.BorderSizePixel = 0
+manBtn.Text = "▶  START NOW"
+manBtn.TextColor3 = Color3.fromRGB(50, 190, 100)
+manBtn.TextSize = 10
+manBtn.Font = Enum.Font.GothamBold
+manBtn.AutoButtonColor = false
+manBtn.ZIndex = 5
+manBtn.Parent = win
+Instance.new("UICorner", manBtn).CornerRadius = UDim.new(0, 7)
+local manBtnStroke = Instance.new("UIStroke", manBtn)
+manBtnStroke.Color = Color3.fromRGB(26, 62, 38)
 manBtnStroke.Thickness = 1
 
--- ─── HOVER EFFECTS ────────────────────────────────────────────────────────────
+-- ─── HOVER ───────────────────────────────────────────────────────────────────
 autoBtn.MouseEnter:Connect(function()
-    TweenService:Create(autoBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}):Play()
+    TweenService:Create(autoBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24, 24, 30)}):Play()
 end)
 autoBtn.MouseLeave:Connect(function()
-    TweenService:Create(autoBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(16, 16, 20)}):Play()
+    TweenService:Create(autoBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(18, 18, 24)}):Play()
 end)
-manualBtn.MouseEnter:Connect(function()
+manBtn.MouseEnter:Connect(function()
     if not isRunning then
-        TweenService:Create(manualBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(18, 38, 24)}):Play()
+        TweenService:Create(manBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(16, 34, 20)}):Play()
     end
 end)
-manualBtn.MouseLeave:Connect(function()
+manBtn.MouseLeave:Connect(function()
     if not isRunning then
-        TweenService:Create(manualBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(14, 28, 18)}):Play()
+        TweenService:Create(manBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(12, 26, 16)}):Play()
     end
 end)
 
--- ─── DRAG ─────────────────────────────────────────────────────────────────────
-local dragging, dragStart, startPos = false, nil, nil
-frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = frame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local d = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-    end
-end)
+-- ─── COLORS ──────────────────────────────────────────────────────────────────
+local BLUE   = Color3.fromRGB(55, 125, 255)
+local GREEN  = Color3.fromRGB(50, 190, 100)
+local ORANGE = Color3.fromRGB(225, 145, 35)
+local CYAN   = Color3.fromRGB(65, 190, 210)
+local DIM    = Color3.fromRGB(45, 45, 55)
+local TRBG   = Color3.fromRGB(20, 20, 26)
 
--- ─── HELPERS ──────────────────────────────────────────────────────────────────
-local function setRing(progress, color)
-    ringFill.BackgroundColor3 = color
+-- ─── RING HELPER ─────────────────────────────────────────────────────────────
+local function setRing(p, c)
+    ringFill.BackgroundColor3 = c
     ringGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0,                              color),
-        ColorSequenceKeypoint.new(math.clamp(progress-0.001,0,1), color),
-        ColorSequenceKeypoint.new(math.clamp(progress, 0.002,1),  Color3.fromRGB(22,22,26)),
-        ColorSequenceKeypoint.new(1,                              Color3.fromRGB(22,22,26)),
+        ColorSequenceKeypoint.new(0,                        c),
+        ColorSequenceKeypoint.new(math.clamp(p-0.001,0,1),  c),
+        ColorSequenceKeypoint.new(math.clamp(p, 0.002, 1),  TRBG),
+        ColorSequenceKeypoint.new(1,                        TRBG),
     })
 end
 
-local BLUE   = Color3.fromRGB(60, 140, 255)
-local GREEN  = Color3.fromRGB(60, 200, 110)
-local ORANGE = Color3.fromRGB(230, 150, 40)
-local CYAN   = Color3.fromRGB(80, 200, 220)
-local DIM    = Color3.fromRGB(55, 55, 65)
-
-local function setDot(color)
-    TweenService:Create(dot, TweenInfo.new(0.2), {BackgroundColor3 = color}):Play()
-end
-
-local function updateManualBtn()
+local function refreshManBtn()
     if isRunning then
-        manualBtn.Text        = "◼  RUNNING"
-        manualBtn.TextColor3  = Color3.fromRGB(100, 100, 115)
-        manualBtn.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-        manBtnStroke.Color    = Color3.fromRGB(30, 30, 36)
+        manBtn.Text = "◼  RUNNING"
+        manBtn.TextColor3 = Color3.fromRGB(80, 80, 95)
+        manBtn.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+        manBtnStroke.Color = Color3.fromRGB(30, 30, 38)
     else
-        manualBtn.Text        = "▶  START NOW"
-        manualBtn.TextColor3  = GREEN
-        manualBtn.BackgroundColor3 = Color3.fromRGB(14, 28, 18)
-        manBtnStroke.Color    = Color3.fromRGB(30, 70, 42)
+        manBtn.Text = "▶  START NOW"
+        manBtn.TextColor3 = GREEN
+        manBtn.BackgroundColor3 = Color3.fromRGB(12, 26, 16)
+        manBtnStroke.Color = Color3.fromRGB(26, 62, 38)
     end
 end
 
--- ─── PATHFIND ─────────────────────────────────────────────────────────────────
+-- ─── PATHFIND ────────────────────────────────────────────────────────────────
 local function walkTo(target)
     local char = player.Character
     if not char then return false end
@@ -275,17 +246,13 @@ local function walkTo(target)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hum or not hrp then return false end
 
-    local path = PathfindingService:CreatePath({
-        AgentHeight = 5, AgentRadius = 2,
-        AgentCanJump = true, AgentCanClimb = true,
-    })
+    local path = PathfindingService:CreatePath({AgentHeight=5,AgentRadius=2,AgentCanJump=true,AgentCanClimb=true})
     local ok = pcall(function() path:ComputeAsync(hrp.Position, target) end)
 
     if not ok or path.Status ~= Enum.PathStatus.Success then
         hum:MoveTo(target)
-        local done = false
+        local done, t = false, 0
         hum.MoveToFinished:Connect(function() done = true end)
-        local t = 0
         while not done and t < 15 do task.wait(0.1); t += 0.1 end
         return done
     end
@@ -295,7 +262,7 @@ local function walkTo(target)
         if wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
         hum:MoveTo(wp.Position)
         local moved, conn = false, nil
-        conn = hum.MoveToFinished:Connect(function() moved = true; conn:Disconnect() end)
+        conn = hum.MoveToFinished:Connect(function() moved=true; conn:Disconnect() end)
         local t = 0
         while not moved and t < 4 do task.wait(0.1); t += 0.1 end
         if not moved then conn:Disconnect() end
@@ -305,166 +272,126 @@ end
 
 local function tweenTp(cf)
     local char = player.Character or player.CharacterAdded:Wait()
-    local hrp  = char:WaitForChild("HumanoidRootPart")
-    local tw   = TweenService:Create(hrp, TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = cf})
-    tw:Play()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    TweenService:Create(hrp, TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame=cf}):Play()
     task.wait(1.5)
 end
 
--- Void-drop reset: fling character to void Y, wait for respawn
 local function voidReset()
     local char = player.Character
     if char then
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            -- Drop to void instantly
-            hrp.CFrame = CFrame.new(hrp.Position.X, VOID_Y, hrp.Position.Z)
-        end
+        if hrp then hrp.CFrame = CFrame.new(hrp.Position.X, VOID_Y, hrp.Position.Z) end
     end
-    -- Wait for character to die and respawn
     player.CharacterAdded:Wait()
     task.wait(1.2)
 end
 
--- ─── MAIN CYCLE ───────────────────────────────────────────────────────────────
+-- ─── CYCLE ───────────────────────────────────────────────────────────────────
 local function runCycle()
-    updateManualBtn()
+    refreshManBtn()
 
-    -- 1. Walk to walk target
-    timerLabel.Text = "~"
-    timerLabel.TextColor3 = CYAN
-    autoBtn.Text = "WALKING..."
-    autoBtn.TextColor3 = CYAN
-    setRing(0.4, CYAN)
-    setDot(CYAN)
+    -- Walk
+    timerTxt.Text = "~"; timerTxt.TextColor3 = CYAN
+    autoBtn.Text = "WALKING..."; autoBtn.TextColor3 = CYAN
+    dot.BackgroundColor3 = CYAN; setRing(0.4, CYAN)
 
     local reached = walkTo(WALK_TARGET)
-    if not isRunning then isRunning = false; updateManualBtn() return end
-
+    if not isRunning then isRunning=false; refreshManBtn() return end
     if not reached then
-        local char = player.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then hrp.CFrame = CFrame.new(WALK_TARGET) end
-        end
-        task.wait(0.4)
+        local c = player.Character
+        if c then local h = c:FindFirstChild("HumanoidRootPart"); if h then h.CFrame = CFrame.new(WALK_TARGET) end end
+        task.wait(0.3)
     end
-    if not isRunning then isRunning = false; updateManualBtn() return end
+    if not isRunning then isRunning=false; refreshManBtn() return end
 
-    -- 2. Tween teleport to tp target
-    timerLabel.Text = "GO"
-    timerLabel.TextColor3 = GREEN
-    autoBtn.Text = "TELEPORTING"
-    autoBtn.TextColor3 = GREEN
-    setRing(1, GREEN)
-    setDot(GREEN)
+    -- Teleport
+    timerTxt.Text = "GO"; timerTxt.TextColor3 = GREEN
+    autoBtn.Text = "TELEPORTING"; autoBtn.TextColor3 = GREEN
+    dot.BackgroundColor3 = GREEN; setRing(1, GREEN)
     tweenTp(TP_TARGET)
-    if not isRunning then isRunning = false; updateManualBtn() return end
+    if not isRunning then isRunning=false; refreshManBtn() return end
 
-    -- 3. Void reset (instead of LoadCharacter)
-    timerLabel.Text = "↓"
-    timerLabel.TextColor3 = ORANGE
-    autoBtn.Text = "RESETTING..."
-    autoBtn.TextColor3 = ORANGE
-    setRing(1, ORANGE)
-    setDot(ORANGE)
+    -- Void reset
+    timerTxt.Text = "↓"; timerTxt.TextColor3 = ORANGE
+    autoBtn.Text = "RESETTING..."; autoBtn.TextColor3 = ORANGE
+    dot.BackgroundColor3 = ORANGE; setRing(1, ORANGE)
     voidReset()
 
-    -- 4. Post-cycle cleanup
+    -- Done
     isRunning = false
-    updateManualBtn()
-    setDot(enabled and GREEN or DIM)
-    setRing(0, BLUE)
-    timerLabel.Text = enabled and tostring(COOLDOWN) or "--"
-    timerLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
-
+    refreshManBtn()
     if enabled then
-        timeLeft = COOLDOWN
-        ready    = false
-        autoBtn.Text      = string.format("AUTO  ON  —  %ds", COOLDOWN)
-        autoBtn.TextColor3 = Color3.fromRGB(160, 160, 175)
+        timeLeft = COOLDOWN; ready = false
+        dot.BackgroundColor3 = GREEN; setRing(0, BLUE)
+        timerTxt.Text = tostring(COOLDOWN); timerTxt.TextColor3 = Color3.fromRGB(150,150,165)
+        autoBtn.Text = string.format("AUTO  ON  —  %ds", COOLDOWN)
+        autoBtn.TextColor3 = Color3.fromRGB(150,150,165)
     else
-        autoBtn.Text       = "AUTO  OFF"
-        autoBtn.TextColor3 = Color3.fromRGB(80, 80, 95)
+        dot.BackgroundColor3 = DIM; setRing(0, DIM)
+        timerTxt.Text = "--"; timerTxt.TextColor3 = Color3.fromRGB(150,150,165)
+        autoBtn.Text = "AUTO  OFF"; autoBtn.TextColor3 = Color3.fromRGB(72,72,88)
     end
 end
 
 local function startCycle()
     if isRunning then return end
-    isRunning = true
-    ready     = false
+    isRunning = true; ready = false
     task.spawn(runCycle)
 end
 
--- ─── MANUAL BUTTON — always clickable regardless of auto state ────────────────
-manualBtn.MouseButton1Click:Connect(function()
-    if not isRunning then
-        startCycle()
-    end
+-- ─── BUTTON EVENTS ───────────────────────────────────────────────────────────
+manBtn.MouseButton1Click:Connect(function()
+    if not isRunning then startCycle() end
 end)
 
--- ─── AUTO TOGGLE ──────────────────────────────────────────────────────────────
 autoBtn.MouseButton1Click:Connect(function()
     enabled = not enabled
     if enabled then
-        timeLeft  = COOLDOWN
-        ready     = false
-        badge.Text      = "AUTO"
-        badge.TextColor3 = GREEN
-        badgeStroke.Color = Color3.fromRGB(30, 70, 42)
-        autoBtnStroke.Color = Color3.fromRGB(30, 80, 50)
-        setDot(GREEN)
+        timeLeft = COOLDOWN; ready = false
+        autoBtnStroke.Color = Color3.fromRGB(28, 72, 46)
         if not isRunning then
-            setRing(0, BLUE)
-            timerLabel.Text = tostring(COOLDOWN)
-            timerLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
+            dot.BackgroundColor3 = GREEN; setRing(0, BLUE)
+            timerTxt.Text = tostring(COOLDOWN); timerTxt.TextColor3 = Color3.fromRGB(150,150,165)
             autoBtn.Text = string.format("AUTO  ON  —  %ds", COOLDOWN)
-            autoBtn.TextColor3 = Color3.fromRGB(160, 160, 175)
+            autoBtn.TextColor3 = Color3.fromRGB(150,150,165)
         end
     else
-        badge.Text = "AUTO"
-        badge.TextColor3 = Color3.fromRGB(80, 80, 95)
-        badgeStroke.Color = Color3.fromRGB(35, 35, 42)
-        autoBtnStroke.Color = Color3.fromRGB(30, 30, 36)
         ready = false
+        autoBtnStroke.Color = Color3.fromRGB(32, 32, 42)
         if not isRunning then
-            setDot(DIM)
-            setRing(0, Color3.fromRGB(40, 40, 50))
-            timerLabel.Text = "--"
-            timerLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
-            autoBtn.Text = "AUTO  OFF"
-            autoBtn.TextColor3 = Color3.fromRGB(80, 80, 95)
+            dot.BackgroundColor3 = DIM; setRing(0, DIM)
+            timerTxt.Text = "--"; timerTxt.TextColor3 = Color3.fromRGB(150,150,165)
+            autoBtn.Text = "AUTO  OFF"; autoBtn.TextColor3 = Color3.fromRGB(72,72,88)
         end
     end
 end)
 
--- ─── COUNTDOWN LOOP ───────────────────────────────────────────────────────────
+-- ─── COUNTDOWN ───────────────────────────────────────────────────────────────
 task.spawn(function()
-    while true do
-        task.wait(1)
+    while task.wait(1) do
         if enabled and not ready and not isRunning then
             if timeLeft <= 0 then
                 ready = true
-                timerLabel.Text       = "!"
-                timerLabel.TextColor3 = GREEN
-                autoBtn.Text          = "READY"
-                autoBtn.TextColor3    = GREEN
-                setDot(GREEN)
-                setRing(1, GREEN)
+                timerTxt.Text = "!"; timerTxt.TextColor3 = GREEN
+                autoBtn.Text = "READY"; autoBtn.TextColor3 = GREEN
+                dot.BackgroundColor3 = GREEN; setRing(1, GREEN)
                 startCycle()
             else
                 local prog = 1 - (timeLeft / COOLDOWN)
                 local col  = timeLeft <= 15 and ORANGE or BLUE
                 setRing(prog, col)
-                timerLabel.Text       = tostring(timeLeft)
-                timerLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
-                autoBtn.Text          = string.format("AUTO  ON  —  %ds", timeLeft)
-                autoBtn.TextColor3    = Color3.fromRGB(160, 160, 175)
+                timerTxt.Text = tostring(timeLeft)
+                timerTxt.TextColor3 = Color3.fromRGB(150,150,165)
+                autoBtn.Text = string.format("AUTO  ON  —  %ds", timeLeft)
+                autoBtn.TextColor3 = Color3.fromRGB(150,150,165)
                 timeLeft -= 1
             end
         elseif not enabled and not isRunning then
-            autoBtn.Text       = "AUTO  OFF"
-            autoBtn.TextColor3 = Color3.fromRGB(80, 80, 95)
+            autoBtn.Text = "AUTO  OFF"
+            autoBtn.TextColor3 = Color3.fromRGB(72,72,88)
         end
     end
 end)
+
+print("[TpGui4] Loaded OK — drag the title bar to move")
