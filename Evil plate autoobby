@@ -1,4 +1,4 @@
--- TELEPORT GUI v4 - FIXED
+-- TELEPORT GUI v4 - NO RESET + 5s COOLDOWN
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,17 +9,16 @@ local player = Players.LocalPlayer
 local COOLDOWN    = 125
 local WALK_TARGET = Vector3.new(117, 15, 150)
 local TP_TARGET   = CFrame.new(179, 28, 249)
-local VOID_Y      = -500
 
 local enabled   = false
 local timeLeft  = COOLDOWN
 local ready     = false
 local isRunning = false
 
--- Safely get hidden GUI container (supports modern executors like KRNL, Delta, etc.)
+-- Safely get hidden GUI container
 local ParentGui = (gethui and gethui()) or pcall(function() return CoreGui.Name end) and CoreGui or player.PlayerGui
 
--- Destroy any old GUI first (Check both containers)
+-- Destroy any old GUI first
 pcall(function()
     if ParentGui:FindFirstChild("TpGui4") then ParentGui.TpGui4:Destroy() end
     if player.PlayerGui:FindFirstChild("TpGui4") then player.PlayerGui.TpGui4:Destroy() end
@@ -30,7 +29,7 @@ task.wait(0.1)
 local gui = Instance.new("ScreenGui")
 gui.Name = "TpGui4"
 gui.ResetOnSpawn = false
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling -- Forces proper UI layering
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = ParentGui
 
 -- Main window
@@ -46,7 +45,7 @@ local ws = Instance.new("UIStroke", win)
 ws.Color = Color3.fromRGB(42, 42, 52)
 ws.Thickness = 1
 
--- Custom Dragging Logic (Replaces broken win.Draggable = true)
+-- Custom Dragging Logic
 local dragging = false
 local dragInput, mousePos, framePos
 
@@ -87,7 +86,6 @@ titleBar.ZIndex = 2
 titleBar.Parent = win
 Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
--- Fix bottom corners of titlebar (overlap trick)
 local titleBarFix = Instance.new("Frame")
 titleBarFix.Size = UDim2.new(1, 0, 0, 10)
 titleBarFix.Position = UDim2.new(0, 0, 1, -10)
@@ -96,7 +94,6 @@ titleBarFix.BorderSizePixel = 0
 titleBarFix.ZIndex = 2
 titleBarFix.Parent = titleBar
 
--- Status dot
 local dot = Instance.new("Frame")
 dot.Size = UDim2.new(0, 7, 0, 7)
 dot.Position = UDim2.new(0, 10, 0.5, -3)
@@ -106,7 +103,6 @@ dot.ZIndex = 3
 dot.Parent = titleBar
 Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
 
--- Title text
 local titleTxt = Instance.new("TextLabel")
 titleTxt.Size = UDim2.new(1, -60, 1, 0)
 titleTxt.Position = UDim2.new(0, 24, 0, 0)
@@ -119,7 +115,6 @@ titleTxt.TextXAlignment = Enum.TextXAlignment.Left
 titleTxt.ZIndex = 3
 titleTxt.Parent = titleBar
 
--- Drag label hint
 local dragHint = Instance.new("TextLabel")
 dragHint.Size = UDim2.new(0, 40, 1, 0)
 dragHint.Position = UDim2.new(1, -44, 0, 0)
@@ -131,7 +126,6 @@ dragHint.Font = Enum.Font.GothamBold
 dragHint.ZIndex = 3
 dragHint.Parent = titleBar
 
--- Divider
 local div = Instance.new("Frame")
 div.Size = UDim2.new(1, -20, 0, 1)
 div.Position = UDim2.new(0, 10, 0, 30)
@@ -251,8 +245,6 @@ local TRBG   = Color3.fromRGB(20, 20, 26)
 -- ─── RING HELPER ─────────────────────────────────────────────────────────────
 local function setRing(p, c)
     ringFill.BackgroundColor3 = c
-    
-    -- Ensure keypoints are strictly ascending to prevent silent crash
     local kp2 = math.clamp(p - 0.001, 0.001, 0.998)
     local kp3 = math.clamp(p, 0.002, 0.999)
     if kp3 <= kp2 then kp3 = kp2 + 0.001 end
@@ -318,16 +310,6 @@ local function tweenTp(cf)
     task.wait(1.5)
 end
 
-local function voidReset()
-    local char = player.Character
-    if char then
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then hrp.CFrame = CFrame.new(hrp.Position.X, VOID_Y, hrp.Position.Z) end
-    end
-    player.CharacterAdded:Wait()
-    task.wait(1.2)
-end
-
 -- ─── CYCLE ───────────────────────────────────────────────────────────────────
 local function runCycle()
     refreshManBtn()
@@ -353,11 +335,14 @@ local function runCycle()
     tweenTp(TP_TARGET)
     if not isRunning then isRunning=false; refreshManBtn() return end
 
-    -- Void reset
-    timerTxt.Text = "↓"; timerTxt.TextColor3 = ORANGE
-    autoBtn.Text = "RESETTING..."; autoBtn.TextColor3 = ORANGE
-    dot.BackgroundColor3 = ORANGE; setRing(1, ORANGE)
-    voidReset()
+    -- 5 Second Cooldown (Replaces Void Reset)
+    for i = 5, 1, -1 do
+        if not isRunning then break end
+        timerTxt.Text = tostring(i); timerTxt.TextColor3 = ORANGE
+        autoBtn.Text = "COOLDOWN... " .. i .. "s"; autoBtn.TextColor3 = ORANGE
+        dot.BackgroundColor3 = ORANGE; setRing(i/5, ORANGE)
+        task.wait(1)
+    end
 
     -- Done
     isRunning = false
@@ -434,5 +419,3 @@ task.spawn(function()
         end
     end
 end)
-
-print("[TpGui4] Loaded OK — You can now drag the UI freely")
