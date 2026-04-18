@@ -1,8 +1,9 @@
--- TELEPORT GUI v4 - Compatible with all executors
+-- TELEPORT GUI v4 - FIXED
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
+local CoreGui = game:GetService("CoreGui")
 local player = Players.LocalPlayer
 
 local COOLDOWN    = 125
@@ -15,10 +16,13 @@ local timeLeft  = COOLDOWN
 local ready     = false
 local isRunning = false
 
--- Destroy any old GUI first
+-- Safely get hidden GUI container (supports modern executors like KRNL, Delta, etc.)
+local ParentGui = (gethui and gethui()) or pcall(function() return CoreGui.Name end) and CoreGui or player.PlayerGui
+
+-- Destroy any old GUI first (Check both containers)
 pcall(function()
-    local old = player.PlayerGui:FindFirstChild("TpGui4")
-    if old then old:Destroy() end
+    if ParentGui:FindFirstChild("TpGui4") then ParentGui.TpGui4:Destroy() end
+    if player.PlayerGui:FindFirstChild("TpGui4") then player.PlayerGui.TpGui4:Destroy() end
 end)
 
 task.wait(0.1)
@@ -26,7 +30,8 @@ task.wait(0.1)
 local gui = Instance.new("ScreenGui")
 gui.Name = "TpGui4"
 gui.ResetOnSpawn = false
-gui.Parent = player.PlayerGui
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling -- Forces proper UI layering
+gui.Parent = ParentGui
 
 -- Main window
 local win = Instance.new("Frame")
@@ -35,12 +40,42 @@ win.Position = UDim2.new(0, 20, 0, 20)
 win.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
 win.BorderSizePixel = 0
 win.Active = true
-win.Draggable = true  -- Use Roblox built-in drag
 win.Parent = gui
 Instance.new("UICorner", win).CornerRadius = UDim.new(0, 10)
 local ws = Instance.new("UIStroke", win)
 ws.Color = Color3.fromRGB(42, 42, 52)
 ws.Thickness = 1
+
+-- Custom Dragging Logic (Replaces broken win.Draggable = true)
+local dragging = false
+local dragInput, mousePos, framePos
+
+win.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        mousePos = input.Position
+        framePos = win.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+win.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - mousePos
+        win.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+    end
+end)
 
 -- Title bar
 local titleBar = Instance.new("Frame")
@@ -216,11 +251,17 @@ local TRBG   = Color3.fromRGB(20, 20, 26)
 -- ─── RING HELPER ─────────────────────────────────────────────────────────────
 local function setRing(p, c)
     ringFill.BackgroundColor3 = c
+    
+    -- Ensure keypoints are strictly ascending to prevent silent crash
+    local kp2 = math.clamp(p - 0.001, 0.001, 0.998)
+    local kp3 = math.clamp(p, 0.002, 0.999)
+    if kp3 <= kp2 then kp3 = kp2 + 0.001 end
+    
     ringGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0,                        c),
-        ColorSequenceKeypoint.new(math.clamp(p-0.001,0,1),  c),
-        ColorSequenceKeypoint.new(math.clamp(p, 0.002, 1),  TRBG),
-        ColorSequenceKeypoint.new(1,                        TRBG),
+        ColorSequenceKeypoint.new(0,   c),
+        ColorSequenceKeypoint.new(kp2, c),
+        ColorSequenceKeypoint.new(kp3, TRBG),
+        ColorSequenceKeypoint.new(1,   TRBG),
     })
 end
 
@@ -394,4 +435,4 @@ task.spawn(function()
     end
 end)
 
-print("[TpGui4] Loaded OK — drag the title bar to move")
+print("[TpGui4] Loaded OK — You can now drag the UI freely")
